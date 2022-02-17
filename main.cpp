@@ -8,32 +8,33 @@
 
 std::vector<char*> dirs;
 
+// Флаги
 struct Flags{
-    bool dir = false;
-    bool file;
-    bool link;
-    bool sort;
+    bool dir; //директории
+    bool file; //файлы
+    bool link; //символические ссылки
+    bool sort; //сортировка
 };
 
-void dirWalk(DIR *d, char *s, Flags flags);
-void parsFlags(int argc, char *argv[], Flags &f);
+bool createPath(char **s, int argc, char **argv, Flags &f);
+bool parsFlags(int argc, char *argv[], Flags &f);
+void dirWalk(char *s, Flags flags);
 void sort();
 
 int main(int argc, char * argv[]) {
-    DIR *d = nullptr;
-    char *s = (char*)malloc(strlen(argv[1]) * sizeof(char));
-    Flags f;
+    char *s = nullptr;
+    Flags f = {false};
     
-    strcpy(s, argv[1]);
-    parsFlags(argc, argv, f);
-    dirWalk(d, s, f);
+    if(!createPath(&s, argc, argv, f))
+        return 0;
+    dirWalk(s, f);
     
-    for(int i = 0; i < dirs.size(); i++)
-        while(std::string(dirs[i]).find(s) != std::string::npos)
-            strcpy(dirs[i], (std::string(dirs[i]).substr(std::string(dirs[i]).find(s) + std::string(s).length()).c_str()));
-    
-    for(int i = 0; i < dirs.size(); i++) puts(dirs[i]);
-    printf("\n");
+    // удаление из вывода части строки содержащую введенный путь
+    if(strcmp(s, ".") || f.dir)
+        for(int i = 0; i < dirs.size(); i++)
+            while(std::string(dirs[i]).find(s) != std::string::npos)
+                strcpy(dirs[i], (std::string(dirs[i]).substr(std::string(dirs[i]).find(s) + std::string(s).length()).c_str()));
+
     if(f.sort)
         sort();
 
@@ -42,8 +43,8 @@ int main(int argc, char * argv[]) {
     return 0;
 }
 
-void parsFlags(int argc, char *argv[], Flags &f){
-    for(int i = 2; i < argc; i++){
+bool parsFlags(int argc, char *argv[], Flags &f){
+    for(int i = 1; i < argc; i++){
         if(!strcmp(argv[i], "-f"))
             f.file = true;
         else if(!strcmp(argv[i], "-d"))
@@ -52,10 +53,45 @@ void parsFlags(int argc, char *argv[], Flags &f){
             f.link = true;
         else if(!strcmp(argv[i], "-s"))
             f.sort = true;
+        else if(argc > 1 && argv[1][0] != '/'){
+            return false;
+        }
     }
+    return true;
 }
 
-void dirWalk(DIR *d, char *s, Flags flags){
+bool createPath(char **s, int argc, char **argv, Flags &f){
+    if(!parsFlags(argc, argv, f)){
+        printf("\ndirwalk [dir] [options]\ndir - directory\noptions:\n\t-l - symbol links only\n\t-d - directorys only\n\t-f - files only\n\t-s - sort\n\n");
+        return false;
+    }
+    else{
+        if((argc > 1 && argv[1][0] != '/') || argc == 1){ //если отсутсвует введенная директория
+            *s = (char*)malloc(1);
+            strcpy(*s, ".");
+        }
+            
+        else{
+            *s = (char*)malloc(strlen(argv[1]) * sizeof(char));
+            strcpy(*s, argv[1]);
+            if(!(opendir(*s))){
+                char *b = (char*)malloc((strlen(*s)+1)*sizeof(char));
+                b[0] = '.';
+                strcat(b, *s);
+                strcpy(*s, b);
+                if(!(opendir(*s))){
+                    printf("\nNo such directory\n\n");
+                    return false;
+                }
+                
+            }
+        }
+    }
+    return true;
+}
+
+void dirWalk(char *s, Flags flags){
+    DIR *d;
     struct dirent *f;
     char *b = (char*)malloc(strlen(s) * sizeof(char));
     
@@ -71,16 +107,17 @@ void dirWalk(DIR *d, char *s, Flags flags){
             strcpy(s, b);
             strcat(s, "/");
             strcat(s, f->d_name);
-            if((flags.dir && f->d_type == DT_DIR) || (flags.file && f->d_type == DT_REG) || (flags.link && f->d_type == DT_LNK) || (!flags.file && !flags.dir && !flags.link))
+            
+            if((flags.dir && f->d_type == DT_DIR) || (flags.file && f->d_type == DT_REG) || (flags.link && f->d_type == DT_LNK)
+               || (!flags.file && !flags.dir && !flags.link))
                 dirs.push_back(s);
             
-            dirWalk(d, s, flags);
+            
+            dirWalk(s, flags);
         }
         closedir(d);
     }
-    else{
-        return;
-    }
+    else return;
 }
 
 void sort(){
